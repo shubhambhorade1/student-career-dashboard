@@ -1,638 +1,159 @@
-/* =========================================================
-   APPLICATIONS
-   Internship / Job Application Tracker
-   ========================================================= */
+/**
+ * applications.js — Internship / job application tracker.
+ */
+const ApplicationsModule = (() => {
+  const STATUSES = ["Applied", "Shortlisted", "Interview", "Selected", "Rejected"];
 
-document.addEventListener("DOMContentLoaded", function () {
-    loadApplications();
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str || "";
+    return div.innerHTML;
+  }
 
-    const applicationForm =
-        document.querySelector("#applicationForm");
+  function formatDate(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  }
 
-    if (applicationForm) {
-        applicationForm.addEventListener(
-            "submit",
-            saveApplication
-        );
+  function renderStats() {
+    const apps = Storage.Applications.getAll();
+    const counts = STATUSES.reduce((acc, s) => ({ ...acc, [s]: 0 }), {});
+    apps.forEach((a) => { if (counts[a.status] !== undefined) counts[a.status]++; });
+
+    const wrap = document.getElementById("applicationStats");
+    wrap.innerHTML = STATUSES.map(
+      (s) => `<article class="stat-card"><p class="stat-card__label">${s}</p><p class="stat-card__value">${counts[s]}</p></article>`
+    ).join("");
+  }
+
+  function render() {
+    renderStats();
+    const apps = Storage.Applications.getAll();
+    const body = document.getElementById("applicationsTableBody");
+    const empty = document.getElementById("applicationsEmpty");
+    const table = document.getElementById("applicationsTable");
+
+    if (apps.length === 0) {
+      body.innerHTML = "";
+      empty.hidden = false;
+      table.hidden = true;
+      return;
     }
+    empty.hidden = true;
+    table.hidden = false;
 
-    document.addEventListener(
-        "sectionChanged",
-        function (event) {
-            if (event.detail.section === "applications") {
-                loadApplications();
-            }
-        }
+    body.innerHTML = apps
+      .map(
+        (a) => `
+      <tr data-id="${a.id}">
+        <td>${escapeHtml(a.company)}</td>
+        <td>${escapeHtml(a.position)}</td>
+        <td>${formatDate(a.appliedDate)}</td>
+        <td><span class="status-pill status-pill--${a.status}">${a.status}</span></td>
+        <td>${formatDate(a.interviewDate)}</td>
+        <td class="notes-cell" title="${escapeHtml(a.notes)}">${escapeHtml(a.notes) || "—"}</td>
+        <td>
+          <div class="table-actions">
+            <button class="icon-btn edit-app" aria-label="Edit application">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+            <button class="icon-btn delete-app" aria-label="Delete application">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>`
+      )
+      .join("");
+
+    body.querySelectorAll(".edit-app").forEach((btn) =>
+      btn.addEventListener("click", (e) => openForm(e.target.closest("tr").dataset.id))
     );
-});
-
-
-/* =========================================================
-   LOAD APPLICATIONS
-   ========================================================= */
-
-function loadApplications() {
-    const data = loadData();
-
-    renderApplications(data.applications);
-    updateApplicationStats(data.applications);
-}
-
-
-/* =========================================================
-   RENDER APPLICATIONS
-   ========================================================= */
-
-function renderApplications(applications) {
-    const container =
-        document.querySelector(
-            "[data-applications-list]"
-        );
-
-    if (!container) {
-        return;
-    }
-
-    if (applications.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-
-                <div class="empty-state-icon">
-                    <i class="fa-solid fa-briefcase"></i>
-                </div>
-
-                <h3>No applications yet</h3>
-
-                <p>
-                    Start tracking your internship and
-                    job applications here.
-                </p>
-
-            </div>
-        `;
-
-        return;
-    }
-
-    container.innerHTML =
-        applications.map(function (application) {
-
-            const statusClass =
-                getApplicationStatusClass(
-                    application.status
-                );
-
-            const interviewDate =
-                application.interviewDate
-                    ? formatDate(
-                        application.interviewDate
-                    )
-                    : "Not scheduled";
-
-            return `
-                <div class="application-card">
-
-                    <div class="application-card-header">
-
-                        <div class="company-icon">
-                            <i class="fa-solid fa-building"></i>
-                        </div>
-
-                        <div class="application-actions">
-
-                            <button
-                                type="button"
-                                class="icon-btn"
-                                onclick="editApplication('${application.id}')"
-                                title="Edit application"
-                            >
-                                <i class="fa-solid fa-pen"></i>
-                            </button>
-
-                            <button
-                                type="button"
-                                class="icon-btn delete-btn"
-                                onclick="removeApplication('${application.id}')"
-                                title="Delete application"
-                            >
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <div class="application-card-body">
-
-                        <span class="application-status ${statusClass}">
-                            ${escapeHTML(application.status)}
-                        </span>
-
-                        <h3>
-                            ${escapeHTML(application.position)}
-                        </h3>
-
-                        <p class="company-name">
-                            ${escapeHTML(application.company)}
-                        </p>
-
-                        <div class="application-info">
-
-                            <div>
-                                <i class="fa-regular fa-calendar"></i>
-
-                                <span>
-                                    Applied:
-                                    ${formatDate(application.applicationDate)}
-                                </span>
-                            </div>
-
-                            <div>
-                                <i class="fa-solid fa-calendar-check"></i>
-
-                                <span>
-                                    Interview:
-                                    ${interviewDate}
-                                </span>
-                            </div>
-
-                        </div>
-
-                        ${
-                            application.notes
-                                ? `
-                                <div class="application-notes">
-                                    <strong>Notes:</strong>
-                                    ${escapeHTML(application.notes)}
-                                </div>
-                                `
-                                : ""
-                        }
-
-                    </div>
-
-                </div>
-            `;
-
-        }).join("");
-}
-
-
-/* =========================================================
-   APPLICATION STATUS CLASS
-   ========================================================= */
-
-function getApplicationStatusClass(status) {
-    const classes = {
-        Applied: "status-applied",
-        Shortlisted: "status-shortlisted",
-        Interview: "status-interview",
-        Selected: "status-selected",
-        Rejected: "status-rejected"
-    };
-
-    return classes[status] || "";
-}
-
-
-/* =========================================================
-   SAVE APPLICATION
-   ========================================================= */
-
-function saveApplication(event) {
-    event.preventDefault();
-
-    const form =
-        event.target;
-
-    if (!validateRequiredFields(form)) {
-        showToast(
-            "Please fill in all required fields.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const company =
-        document.querySelector("#company")
-            ?.value.trim();
-
-    const position =
-        document.querySelector("#position")
-            ?.value.trim();
-
-    const applicationDate =
-        document.querySelector("#applicationDate")
-            ?.value;
-
-    const status =
-        document.querySelector("#applicationStatus")
-            ?.value;
-
-    const interviewDate =
-        document.querySelector("#interviewDate")
-            ?.value;
-
-    const notes =
-        document.querySelector("#applicationNotes")
-            ?.value.trim();
-
-    if (!company) {
-        showToast(
-            "Please enter the company name.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (!position) {
-        showToast(
-            "Please enter the position.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (!applicationDate) {
-        showToast(
-            "Please select the application date.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (!status) {
-        showToast(
-            "Please select an application status.",
-            "warning"
-        );
-
-        return;
-    }
-
-    /*
-     * Interview date should not be before
-     * application date.
-     */
-    if (
-        interviewDate &&
-        interviewDate < applicationDate
-    ) {
-        showToast(
-            "Interview date cannot be before the application date.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const applicationData = {
-        company: company,
-        position: position,
-        applicationDate: applicationDate,
-        status: status,
-        interviewDate: interviewDate,
-        notes: notes
-    };
-
-    const editingId =
-        appState.editingId;
-
-    if (editingId) {
-
-        updateItem(
-            "applications",
-            editingId,
-            applicationData
-        );
-
-        addActivity(
-            "application",
-            `Updated ${position} application at ${company}`
-        );
-
-        showToast(
-            "Application updated successfully!",
-            "success"
-        );
-
-    } else {
-
-        addItem(
-            "applications",
-            applicationData
-        );
-
-        addActivity(
-            "application",
-            `Applied for ${position} at ${company}`
-        );
-
-        showToast(
-            "Application added successfully!",
-            "success"
-        );
-    }
-
-    resetApplicationForm();
-
-    loadApplications();
-
-    document.dispatchEvent(
-        new CustomEvent("applicationsUpdated")
-    );
-}
-
-
-/* =========================================================
-   EDIT APPLICATION
-   ========================================================= */
-
-function editApplication(id) {
-    const application =
-        findItem(
-            "applications",
-            id
-        );
-
-    if (!application) {
-        showToast(
-            "Application could not be found.",
-            "error"
-        );
-
-        return;
-    }
-
-    appState.editingId = id;
-
-    setInputValue(
-        "#company",
-        application.company
-    );
-
-    setInputValue(
-        "#position",
-        application.position
-    );
-
-    setInputValue(
-        "#applicationDate",
-        application.applicationDate
-    );
-
-    setInputValue(
-        "#applicationStatus",
-        application.status
-    );
-
-    setInputValue(
-        "#interviewDate",
-        application.interviewDate
-    );
-
-    setInputValue(
-        "#applicationNotes",
-        application.notes
-    );
-
-    const formTitle =
-        document.querySelector(
-            "[data-application-form-title]"
-        );
-
-    if (formTitle) {
-        formTitle.textContent =
-            "Edit Application";
-    }
-
-    const submitButton =
-        document.querySelector(
-            "#applicationForm button[type='submit']"
-        );
-
-    if (submitButton) {
-        submitButton.innerHTML =
-            `<i class="fa-solid fa-check"></i> Update Application`;
-    }
-
-    const cancelButton =
-        document.querySelector(
-            "[data-cancel-application]"
-        );
-
-    if (cancelButton) {
-        cancelButton.style.display =
-            "inline-flex";
-    }
-
-    const form =
-        document.querySelector(
-            "#applicationForm"
-        );
-
-    if (form) {
-        form.scrollIntoView({
-            behavior: "smooth",
-            block: "center"
+    body.querySelectorAll(".delete-app").forEach((btn) =>
+      btn.addEventListener("click", (e) => {
+        const id = e.target.closest("tr").dataset.id;
+        UI.confirm("Delete this application record? This can't be undone.", () => {
+          Storage.Applications.delete(id);
+          Storage.Activity.log("Deleted an application record");
+          render();
+          Dashboard.render();
+          Analytics.render();
+          UI.toast("Application deleted", "info");
         });
-    }
-}
-
-
-/* =========================================================
-   DELETE APPLICATION
-   ========================================================= */
-
-function removeApplication(id) {
-    const application =
-        findItem(
-            "applications",
-            id
-        );
-
-    if (!application) {
-        return;
-    }
-
-    const confirmed =
-        confirmDelete(
-            `"${application.position} at ${application.company}"`
-        );
-
-    if (!confirmed) {
-        return;
-    }
-
-    deleteItem(
-        "applications",
-        id
+      })
     );
+  }
 
-    addActivity(
-        "application",
-        `Deleted ${application.position} application`
-    );
+  function openForm(id) {
+    const existing = id ? Storage.Applications.getAll().find((a) => a.id === id) : null;
+    const body = `
+      <form id="applicationForm" class="form-grid">
+        <div class="field">
+          <label for="appCompany">Company</label>
+          <input type="text" id="appCompany" required placeholder="e.g. Wipro" value="${existing ? escapeHtml(existing.company) : ""}">
+        </div>
+        <div class="field">
+          <label for="appPosition">Position</label>
+          <input type="text" id="appPosition" placeholder="e.g. Frontend Intern" value="${existing ? escapeHtml(existing.position) : ""}">
+        </div>
+        <div class="field">
+          <label for="appDate">Application date</label>
+          <input type="date" id="appDate" value="${existing ? existing.appliedDate : ""}">
+        </div>
+        <div class="field">
+          <label for="appStatus">Status</label>
+          <select id="appStatus">
+            ${STATUSES.map((s) => `<option ${existing && existing.status === s ? "selected" : ""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label for="appInterviewDate">Interview date (optional)</label>
+          <input type="date" id="appInterviewDate" value="${existing ? existing.interviewDate || "" : ""}">
+        </div>
+        <div class="field field--wide">
+          <label for="appNotes">Notes</label>
+          <textarea id="appNotes" rows="2" placeholder="Anything worth remembering">${existing ? escapeHtml(existing.notes) : ""}</textarea>
+        </div>
+        <div class="form-actions field--wide">
+          <button type="submit" class="btn btn--primary">${existing ? "Save changes" : "Log application"}</button>
+        </div>
+      </form>`;
+    UI.openModal(existing ? "Edit application" : "Log application", body);
 
-    showToast(
-        "Application deleted successfully.",
-        "success"
-    );
+    document.getElementById("applicationForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const company = document.getElementById("appCompany").value.trim();
+      if (!company) return;
+      const payload = {
+        company,
+        position: document.getElementById("appPosition").value.trim(),
+        appliedDate: document.getElementById("appDate").value,
+        status: document.getElementById("appStatus").value,
+        interviewDate: document.getElementById("appInterviewDate").value,
+        notes: document.getElementById("appNotes").value.trim(),
+      };
+      if (existing) {
+        Storage.Applications.update(existing.id, payload);
+        Storage.Activity.log(`Updated application to ${company}`);
+        UI.toast("Application updated", "success");
+      } else {
+        Storage.Applications.add(payload);
+        Storage.Activity.log(`Logged application to ${company}`);
+        UI.toast("Application logged", "success");
+      }
+      UI.closeModal();
+      render();
+      Dashboard.render();
+      Analytics.render();
+    });
+  }
 
-    loadApplications();
+  function init() {
+    document.getElementById("addApplicationBtn").addEventListener("click", () => openForm(null));
+    render();
+  }
 
-    document.dispatchEvent(
-        new CustomEvent("applicationsUpdated")
-    );
-}
-
-
-/* =========================================================
-   RESET APPLICATION FORM
-   ========================================================= */
-
-function resetApplicationForm() {
-    const form =
-        document.querySelector(
-            "#applicationForm"
-        );
-
-    if (form) {
-        form.reset();
-    }
-
-    appState.editingId = null;
-
-    const formTitle =
-        document.querySelector(
-            "[data-application-form-title]"
-        );
-
-    if (formTitle) {
-        formTitle.textContent =
-            "Add Application";
-    }
-
-    const submitButton =
-        document.querySelector(
-            "#applicationForm button[type='submit']"
-        );
-
-    if (submitButton) {
-        submitButton.innerHTML =
-            `<i class="fa-solid fa-plus"></i> Add Application`;
-    }
-
-    const cancelButton =
-        document.querySelector(
-            "[data-cancel-application]"
-        );
-
-    if (cancelButton) {
-        cancelButton.style.display =
-            "none";
-    }
-}
-
-
-/* =========================================================
-   CANCEL EDIT
-   ========================================================= */
-
-const cancelApplicationButton =
-    document.querySelector(
-        "[data-cancel-application]"
-    );
-
-if (cancelApplicationButton) {
-    cancelApplicationButton.addEventListener(
-        "click",
-        function () {
-            resetApplicationForm();
-        }
-    );
-}
-
-
-/* =========================================================
-   APPLICATION STATISTICS
-   ========================================================= */
-
-function updateApplicationStats(
-    applications
-) {
-    const total =
-        applications.length;
-
-    const applied =
-        applications.filter(function (item) {
-            return item.status === "Applied";
-        }).length;
-
-    const shortlisted =
-        applications.filter(function (item) {
-            return item.status === "Shortlisted";
-        }).length;
-
-    const interviews =
-        applications.filter(function (item) {
-            return item.status === "Interview";
-        }).length;
-
-    const selected =
-        applications.filter(function (item) {
-            return item.status === "Selected";
-        }).length;
-
-    const rejected =
-        applications.filter(function (item) {
-            return item.status === "Rejected";
-        }).length;
-
-    const active =
-        applications.filter(function (item) {
-            return (
-                item.status !== "Rejected" &&
-                item.status !== "Selected"
-            );
-        }).length;
-
-    setElementText(
-        "[data-application-total]",
-        total
-    );
-
-    setElementText(
-        "[data-application-applied]",
-        applied
-    );
-
-    setElementText(
-        "[data-application-shortlisted]",
-        shortlisted
-    );
-
-    setElementText(
-        "[data-application-interview]",
-        interviews
-    );
-
-    setElementText(
-        "[data-application-selected]",
-        selected
-    );
-
-    setElementText(
-        "[data-application-rejected]",
-        rejected
-    );
-
-    setElementText(
-        "[data-stat='applications']",
-        active
-    );
-}
+  return { init, render, STATUSES };
+})();
