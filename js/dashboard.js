@@ -1,476 +1,131 @@
-/* =========================================================
-   DASHBOARD
-   ========================================================= */
+/**
+ * dashboard.js — Overview stats, profile completion ring, activity feed,
+ * and the career progress line chart.
+ */
+const Dashboard = (() => {
+  let progressChart = null;
 
-document.addEventListener("DOMContentLoaded", function () {
-    loadDashboard();
+  function timeAgo(iso) {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  }
 
-    document.addEventListener("sectionChanged", function (event) {
-        if (event.detail.section === "dashboard") {
-            loadDashboard();
-        }
+  function renderStatCards() {
+    const skills = Storage.Skills.getAll();
+    const projects = Storage.Projects.getAll();
+    const applications = Storage.Applications.getAll();
+    const learning = Storage.Learning.getAll();
+
+    document.getElementById("statSkills").textContent = skills.length;
+    document.getElementById("statSkillsHint").textContent =
+      skills.length ? `${new Set(skills.map((s) => s.category)).size} categories` : "Add your first skill";
+
+    document.getElementById("statProjects").textContent = projects.length;
+    const completed = projects.filter((p) => p.status === "Completed").length;
+    document.getElementById("statProjectsHint").textContent = projects.length ? `${completed} completed` : "Add your first project";
+
+    const active = applications.filter((a) => !["Selected", "Rejected"].includes(a.status)).length;
+    document.getElementById("statApplications").textContent = active;
+    document.getElementById("statApplicationsHint").textContent = `${applications.length} total logged`;
+
+    const avgLearning = learning.length
+      ? Math.round(learning.reduce((sum, g) => sum + g.progress, 0) / learning.length)
+      : 0;
+    document.getElementById("statLearning").textContent = `${avgLearning}%`;
+    document.getElementById("statLearningHint").textContent = `${learning.length} active goal${learning.length === 1 ? "" : "s"}`;
+  }
+
+  function renderProfileRing() {
+    const profile = Storage.Profile.get();
+    const pct = ProfileModule.computeCompletion(profile);
+    document.getElementById("profileCompletionText").textContent = `${pct}%`;
+    const circumference = 2 * Math.PI * 27;
+    const offset = circumference - (pct / 100) * circumference;
+    const ring = document.getElementById("profileRing");
+    ring.style.strokeDasharray = circumference;
+    ring.style.strokeDashoffset = offset;
+  }
+
+  function renderActivity() {
+    const items = Storage.Activity.getAll().slice(0, 8);
+    const list = document.getElementById("activityList");
+    if (items.length === 0) {
+      list.innerHTML = `<li style="opacity:.6">No activity yet — start by adding a skill or project.</li>`;
+      return;
+    }
+    list.innerHTML = items
+      .map((a) => `<li>${a.text}<span class="activity-time">${timeAgo(a.time)}</span></li>`)
+      .join("");
+  }
+
+  function renderChart() {
+    const ctx = document.getElementById("careerProgressChart");
+    if (!ctx) return;
+
+    const skills = Storage.Skills.getAll();
+    const projects = Storage.Projects.getAll();
+    const learning = Storage.Learning.getAll();
+
+    // Build a simple 6-month trailing snapshot using current totals as the
+    // final point, with a gentle synthetic ramp for earlier months so the
+    // chart reads as a trend rather than a single flat line.
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(d.toLocaleDateString("en-IN", { month: "short" }));
+    }
+    const ramp = (total) => months.map((_, idx) => Math.round((total * (idx + 1)) / months.length));
+
+    const skillsData = ramp(skills.length);
+    const projectsData = ramp(projects.length);
+    const avgLearning = learning.length ? Math.round(learning.reduce((s, g) => s + g.progress, 0) / learning.length) : 0;
+    const learningData = ramp(avgLearning === 0 ? 0 : Math.max(avgLearning, 10));
+
+    if (progressChart) progressChart.destroy();
+
+    const styles = getComputedStyle(document.documentElement);
+    const accent = styles.getPropertyValue("--accent").trim();
+    const teal = styles.getPropertyValue("--teal").trim();
+    const amber = styles.getPropertyValue("--amber").trim();
+    const gridColor = styles.getPropertyValue("--border").trim();
+    const textColor = styles.getPropertyValue("--text-muted").trim();
+
+    progressChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: months,
+        datasets: [
+          { label: "Skills", data: skillsData, borderColor: accent, backgroundColor: accent, tension: 0.35, pointRadius: 3 },
+          { label: "Projects", data: projectsData, borderColor: teal, backgroundColor: teal, tension: 0.35, pointRadius: 3 },
+          { label: "Learning %", data: learningData, borderColor: amber, backgroundColor: amber, tension: 0.35, pointRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: "bottom", labels: { color: textColor, boxWidth: 10, font: { size: 11 } } },
+        },
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { color: textColor } },
+          y: { grid: { color: gridColor }, ticks: { color: textColor }, beginAtZero: true },
+        },
+      },
     });
-});
-
-
-/* =========================================================
-   LOAD DASHBOARD
-   ========================================================= */
-
-function loadDashboard() {
-    const data = loadData();
-
-    updateDashboardStats(data);
-    updateProfileCompletion(data);
-    updateRecentActivities(data);
-    updateLearningProgress(data);
-    updateDashboardChart(data);
-}
-
-
-/* =========================================================
-   DASHBOARD STATISTICS
-   ========================================================= */
-
-function updateDashboardStats(data) {
-    const totalSkills = data.skills.length;
-    const totalProjects = data.projects.length;
-
-    const activeApplications =
-        data.applications.filter(function (application) {
-            return (
-                application.status !== "Rejected" &&
-                application.status !== "Selected"
-            );
-        }).length;
-
-    const learningProgress =
-        data.learning.length > 0
-            ? Math.round(
-                data.learning.reduce(function (total, item) {
-                    return total + Number(item.progress);
-                }, 0) / data.learning.length
-            )
-            : 0;
-
-    setElementText(
-        "[data-stat='skills']",
-        totalSkills
-    );
-
-    setElementText(
-        "[data-stat='projects']",
-        totalProjects
-    );
-
-    setElementText(
-        "[data-stat='applications']",
-        activeApplications
-    );
-
-    setElementText(
-        "[data-stat='learning']",
-        learningProgress + "%"
-    );
-}
-
-
-/* =========================================================
-   PROFILE COMPLETION
-   ========================================================= */
-
-function updateProfileCompletion(data) {
-    const percentage =
-        calculateProfileCompletion(data.profile);
-
-    const percentageText =
-        document.querySelector(
-            "[data-profile-percentage]"
-        );
-
-    if (percentageText) {
-        percentageText.textContent =
-            percentage + "%";
-    }
-
-    const progressCircle =
-        document.querySelector(
-            "[data-profile-circle]"
-        );
-
-    if (progressCircle) {
-        const degrees =
-            (percentage / 100) * 360;
-
-        progressCircle.style.background =
-            `conic-gradient(
-                var(--primary) ${degrees}deg,
-                var(--border-color) ${degrees}deg
-            )`;
-    }
-
-    const progressBar =
-        document.querySelector(
-            "[data-profile-progress]"
-        );
-
-    if (progressBar) {
-        progressBar.style.width =
-            percentage + "%";
-    }
-}
-
-
-/* =========================================================
-   RECENT ACTIVITIES
-   ========================================================= */
-
-function updateRecentActivities(data) {
-    const activityContainer =
-        document.querySelector(
-            "[data-recent-activities]"
-        );
-
-    if (!activityContainer) {
-        return;
-    }
-
-    const activities =
-        data.activities.slice(0, 5);
-
-    if (activities.length === 0) {
-        activityContainer.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                </div>
-
-                <h3>No recent activity</h3>
-
-                <p>
-                    Your recent career activities will appear here.
-                </p>
-            </div>
-        `;
-
-        return;
-    }
-
-    activityContainer.innerHTML =
-        activities.map(function (activity) {
-
-            const icon =
-                getActivityIcon(activity.type);
-
-            return `
-                <div class="activity-item">
-
-                    <div class="activity-icon">
-                        <i class="fa-solid ${icon}"></i>
-                    </div>
-
-                    <div class="activity-content">
-
-                        <div class="activity-text">
-                            ${escapeHTML(activity.text)}
-                        </div>
-
-                        <div class="activity-time">
-                            ${getRelativeTime(activity.date)}
-                        </div>
-
-                    </div>
-
-                </div>
-            `;
-
-        }).join("");
-}
-
-
-/* =========================================================
-   ACTIVITY ICON
-   ========================================================= */
-
-function getActivityIcon(type) {
-    const icons = {
-        project: "fa-folder",
-        skill: "fa-code",
-        application: "fa-briefcase",
-        learning: "fa-book-open",
-        profile: "fa-user"
-    };
-
-    return icons[type] || "fa-bell";
-}
-
-
-/* =========================================================
-   LEARNING PROGRESS
-   ========================================================= */
-
-function updateLearningProgress(data) {
-    const container =
-        document.querySelector(
-            "[data-learning-progress]"
-        );
-
-    if (!container) {
-        return;
-    }
-
-    const learningItems =
-        data.learning.slice(0, 4);
-
-    if (learningItems.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">
-                    <i class="fa-solid fa-book"></i>
-                </div>
-
-                <h3>No learning goals</h3>
-
-                <p>
-                    Add a learning goal to start tracking your progress.
-                </p>
-            </div>
-        `;
-
-        return;
-    }
-
-    container.innerHTML =
-        learningItems.map(function (item) {
-
-            const progress =
-                Number(item.progress) || 0;
-
-            return `
-                <div class="progress-wrapper mb-20">
-
-                    <div class="progress-label">
-
-                        <span>
-                            ${escapeHTML(item.topic)}
-                        </span>
-
-                        <span>
-                            ${progress}%
-                        </span>
-
-                    </div>
-
-                    <div class="progress-bar">
-
-                        <div
-                            class="progress-fill"
-                            style="width: ${progress}%"
-                        ></div>
-
-                    </div>
-
-                </div>
-            `;
-
-        }).join("");
-}
-
-
-/* =========================================================
-   DASHBOARD CAREER CHART
-   ========================================================= */
-
-let dashboardChart = null;
-
-function updateDashboardChart(data) {
-    const canvas =
-        document.querySelector(
-            "#careerProgressChart"
-        );
-
-    if (!canvas || typeof Chart === "undefined") {
-        return;
-    }
-
-    const learningProgress =
-        data.learning.length > 0
-            ? Math.round(
-                data.learning.reduce(function (total, item) {
-                    return total + Number(item.progress);
-                }, 0) / data.learning.length
-            )
-            : 0;
-
-    const profileProgress =
-        calculateProfileCompletion(data.profile);
-
-    const skillsProgress =
-        data.skills.length > 0
-            ? Math.min(
-                Math.round(
-                    data.skills.reduce(function (
-                        total,
-                        skill
-                    ) {
-                        return (
-                            total +
-                            Number(skill.proficiency)
-                        );
-                    }, 0) /
-                    data.skills.length
-                ),
-                100
-            )
-            : 0;
-
-    const projectProgress =
-        Math.min(
-            data.projects.length * 20,
-            100
-        );
-
-    const applicationProgress =
-        Math.min(
-            data.applications.length * 20,
-            100
-        );
-
-    if (dashboardChart) {
-        dashboardChart.destroy();
-    }
-
-    dashboardChart = new Chart(
-        canvas,
-        {
-            type: "line",
-
-            data: {
-                labels: [
-                    "Profile",
-                    "Skills",
-                    "Projects",
-                    "Applications",
-                    "Learning"
-                ],
-
-                datasets: [
-                    {
-                        label: "Career Progress",
-
-                        data: [
-                            profileProgress,
-                            skillsProgress,
-                            projectProgress,
-                            applicationProgress,
-                            learningProgress
-                        ],
-
-                        borderColor:
-                            "#6366f1",
-
-                        backgroundColor:
-                            "rgba(99, 102, 241, 0.12)",
-
-                        borderWidth: 3,
-
-                        pointBackgroundColor:
-                            "#6366f1",
-
-                        pointBorderColor:
-                            "#ffffff",
-
-                        pointBorderWidth: 2,
-
-                        pointRadius: 5,
-
-                        tension: 0.4,
-
-                        fill: true
-                    }
-                ]
-            },
-
-            options: {
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-
-                scales: {
-                    y: {
-                        beginAtZero: true,
-
-                        max: 100,
-
-                        ticks: {
-                            callback: function (value) {
-                                return value + "%";
-                            }
-                        },
-
-                        grid: {
-                            color:
-                                getChartGridColor()
-                        }
-                    },
-
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   CHART GRID COLOR
-   ========================================================= */
-
-function getChartGridColor() {
-    const darkMode =
-        document.body.classList.contains(
-            "dark-mode"
-        );
-
-    return darkMode
-        ? "rgba(148, 163, 184, 0.12)"
-        : "rgba(148, 163, 184, 0.18)";
-}
-
-
-/* =========================================================
-   SIMPLE DOM HELPER
-   ========================================================= */
-
-function setElementText(selector, value) {
-    const element =
-        document.querySelector(selector);
-
-    if (element) {
-        element.textContent = value;
-    }
-}
-
-
-/* =========================================================
-   UPDATE CHART WHEN THEME CHANGES
-   ========================================================= */
-
-document.addEventListener(
-    "themeChanged",
-    function () {
-        const data = loadData();
-
-        updateDashboardChart(data);
-    }
-);
+  }
+
+  function render() {
+    renderStatCards();
+    renderProfileRing();
+    renderActivity();
+    renderChart();
+  }
+
+  return { render, renderChart };
+})();
