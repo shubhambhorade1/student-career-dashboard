@@ -1,480 +1,99 @@
-/* =========================================================
-   PROFILE
-   ========================================================= */
+/**
+ * profile.js — Student profile form: load, save, photo upload, completion %.
+ */
+const ProfileModule = (() => {
+  const FIELDS = ["fullName", "college", "course", "year", "location", "email", "github", "linkedin", "bio"];
 
-document.addEventListener("DOMContentLoaded", function () {
-    loadProfile();
+  function getInitials(name) {
+    if (!name) return "SB";
+    const parts = name.trim().split(/\s+/);
+    return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+  }
 
-    const profileForm =
-        document.querySelector("#profileForm");
+  function computeCompletion(profile) {
+    const weighted = ["fullName", "college", "course", "year", "location", "email", "github", "linkedin", "bio", "photo"];
+    const filled = weighted.filter((f) => profile[f] && String(profile[f]).trim() !== "").length;
+    return Math.round((filled / weighted.length) * 100);
+  }
 
-    if (profileForm) {
-        profileForm.addEventListener(
-            "submit",
-            saveProfileForm
-        );
+  function renderPhoto(profile) {
+    const img = document.getElementById("profilePhotoPreview");
+    const initials = document.getElementById("profilePhotoInitials");
+    if (profile.photo) {
+      img.src = profile.photo;
+      img.hidden = false;
+      initials.hidden = true;
+    } else {
+      img.hidden = true;
+      initials.hidden = false;
+      initials.textContent = getInitials(profile.fullName);
     }
-});
+  }
 
+  function loadForm() {
+    const profile = Storage.Profile.get();
+    FIELDS.forEach((f) => {
+      const el = document.getElementById(f);
+      if (el) el.value = profile[f] || "";
+    });
+    renderPhoto(profile);
 
-/* =========================================================
-   LOAD PROFILE
-   ========================================================= */
+    const welcome = document.getElementById("welcomeMessage");
+    if (welcome) {
+      welcome.textContent = profile.fullName ? `Welcome back, ${profile.fullName.split(" ")[0]}` : "Welcome back";
+    }
+  }
 
-function loadProfile() {
-    const data = loadData();
+  function bindForm() {
+    const form = document.getElementById("profileForm");
+    if (!form) return;
 
-    if (!data.profile) {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const existing = Storage.Profile.get();
+      const data = { ...existing };
+      FIELDS.forEach((f) => {
+        data[f] = document.getElementById(f).value.trim();
+      });
+      Storage.Profile.save(data);
+      Storage.Activity.log("Updated profile details");
+
+      const status = document.getElementById("profileSaveStatus");
+      status.textContent = "Saved ✓";
+      status.classList.add("is-visible");
+      setTimeout(() => status.classList.remove("is-visible"), 2000);
+
+      UI.toast("Profile saved", "success");
+      renderPhoto(data);
+      loadForm();
+      Dashboard.render();
+    });
+
+    const photoInput = document.getElementById("photoInput");
+    photoInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        UI.toast("Please choose an image file", "error");
         return;
-    }
-
-    const profile = data.profile;
-
-    setInputValue(
-        "#fullName",
-        profile.fullName
-    );
-
-    setInputValue(
-        "#college",
-        profile.college
-    );
-
-    setInputValue(
-        "#course",
-        profile.course
-    );
-
-    setInputValue(
-        "#year",
-        profile.year
-    );
-
-    setInputValue(
-        "#location",
-        profile.location
-    );
-
-    setInputValue(
-        "#email",
-        profile.email
-    );
-
-    setInputValue(
-        "#github",
-        profile.github
-    );
-
-    setInputValue(
-        "#linkedin",
-        profile.linkedin
-    );
-
-    setInputValue(
-        "#bio",
-        profile.bio
-    );
-
-    updateProfilePhoto(
-        profile.photo
-    );
-
-    updateProfilePreview(profile);
-}
-
-
-/* =========================================================
-   SAVE PROFILE FORM
-   ========================================================= */
-
-function saveProfileForm(event) {
-    event.preventDefault();
-
-    const form =
-        event.target;
-
-    if (!validateRequiredFields(form)) {
-        showToast(
-            "Please fill in all required fields.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const fullName =
-        document.querySelector("#fullName")?.value.trim();
-
-    const college =
-        document.querySelector("#college")?.value.trim();
-
-    const course =
-        document.querySelector("#course")?.value.trim();
-
-    const year =
-        document.querySelector("#year")?.value.trim();
-
-    const location =
-        document.querySelector("#location")?.value.trim();
-
-    const email =
-        document.querySelector("#email")?.value.trim();
-
-    const github =
-        document.querySelector("#github")?.value.trim();
-
-    const linkedin =
-        document.querySelector("#linkedin")?.value.trim();
-
-    const bio =
-        document.querySelector("#bio")?.value.trim();
-
-    /*
-     * Basic email validation
-     */
-    if (!isValidEmail(email)) {
-        showToast(
-            "Please enter a valid email address.",
-            "warning"
-        );
-
-        return;
-    }
-
-    /*
-     * URL validation
-     */
-    if (
-        github &&
-        !isValidURL(github)
-    ) {
-        showToast(
-            "Please enter a valid GitHub URL.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (
-        linkedin &&
-        !isValidURL(linkedin)
-    ) {
-        showToast(
-            "Please enter a valid LinkedIn URL.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const updatedProfile = {
-        fullName,
-        college,
-        course,
-        year,
-        location,
-        email,
-        github,
-        linkedin,
-        bio
-    };
-
-    updateProfile(updatedProfile);
-
-    updateUserNames(
-        updatedProfile
-    );
-
-    updateProfilePreview(
-        updatedProfile
-    );
-
-    /*
-     * Refresh dashboard information.
-     */
-    document.dispatchEvent(
-        new CustomEvent("profileUpdated")
-    );
-
-    showToast(
-        "Profile updated successfully!",
-        "success"
-    );
-}
-
-
-/* =========================================================
-   PROFILE PHOTO
-   ========================================================= */
-
-const photoInput =
-    document.querySelector("#profilePhoto");
-
-if (photoInput) {
-    photoInput.addEventListener(
-        "change",
-        handleProfilePhoto
-    );
-}
-
-
-function handleProfilePhoto(event) {
-    const file =
-        event.target.files[0];
-
-    if (!file) {
-        return;
-    }
-
-    /*
-     * Only allow images.
-     */
-    if (!file.type.startsWith("image/")) {
-        showToast(
-            "Please select a valid image file.",
-            "warning"
-        );
-
-        event.target.value = "";
-
-        return;
-    }
-
-    /*
-     * Limit image size to 2 MB.
-     */
-    if (file.size > 2 * 1024 * 1024) {
-        showToast(
-            "Profile photo must be smaller than 2 MB.",
-            "warning"
-        );
-
-        event.target.value = "";
-
-        return;
-    }
-
-    const reader =
-        new FileReader();
-
-    reader.onload = function () {
-        const imageData =
-            reader.result;
-
-        const data =
-            loadData();
-
-        data.profile.photo =
-            imageData;
-
-        saveData(data);
-
-        updateProfilePhoto(
-            imageData
-        );
-
-        updateUserAvatar(
-            imageData
-        );
-
-        showToast(
-            "Profile photo updated.",
-            "success"
-        );
-    };
-
-    reader.readAsDataURL(file);
-}
-
-
-/* =========================================================
-   UPDATE PROFILE PHOTO
-   ========================================================= */
-
-function updateProfilePhoto(photo) {
-    const photoElements =
-        document.querySelectorAll(
-            "[data-profile-photo]"
-        );
-
-    photoElements.forEach(
-        function (element) {
-
-            if (photo) {
-                element.src = photo;
-                element.classList.add(
-                    "has-photo"
-                );
-            } else {
-                element.removeAttribute(
-                    "src"
-                );
-
-                element.classList.remove(
-                    "has-photo"
-                );
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   UPDATE USER AVATAR
-   ========================================================= */
-
-function updateUserAvatar(photo) {
-    const avatarElements =
-        document.querySelectorAll(
-            "[data-user-avatar]"
-        );
-
-    avatarElements.forEach(
-        function (element) {
-
-            if (photo) {
-                element.style.backgroundImage =
-                    `url("${photo}")`;
-
-                element.style.backgroundSize =
-                    "cover";
-
-                element.style.backgroundPosition =
-                    "center";
-
-                element.textContent = "";
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   PROFILE PREVIEW
-   ========================================================= */
-
-function updateProfilePreview(profile) {
-    setElementText(
-        "[data-preview-name]",
-        profile.fullName || "Your Name"
-    );
-
-    setElementText(
-        "[data-preview-college]",
-        profile.college || "Your College"
-    );
-
-    setElementText(
-        "[data-preview-course]",
-        profile.course || "Your Course"
-    );
-
-    setElementText(
-        "[data-preview-location]",
-        profile.location || "Your Location"
-    );
-
-    setElementText(
-        "[data-preview-email]",
-        profile.email || "your@email.com"
-    );
-
-    setElementText(
-        "[data-preview-bio]",
-        profile.bio ||
-        "Add a short professional bio."
-    );
-
-    const githubLink =
-        document.querySelector(
-            "[data-preview-github]"
-        );
-
-    if (githubLink) {
-        githubLink.href =
-            profile.github || "#";
-    }
-
-    const linkedinLink =
-        document.querySelector(
-            "[data-preview-linkedin]"
-        );
-
-    if (linkedinLink) {
-        linkedinLink.href =
-            profile.linkedin || "#";
-    }
-
-    updateProfilePhoto(
-        profile.photo
-    );
-
-    updateUserAvatar(
-        profile.photo
-    );
-}
-
-
-/* =========================================================
-   SET INPUT VALUE
-   ========================================================= */
-
-function setInputValue(
-    selector,
-    value
-) {
-    const input =
-        document.querySelector(selector);
-
-    if (input) {
-        input.value =
-            value || "";
-    }
-}
-
-
-/* =========================================================
-   EMAIL VALIDATION
-   ========================================================= */
-
-function isValidEmail(email) {
-    const pattern =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    return pattern.test(email);
-}
-
-
-/* =========================================================
-   URL VALIDATION
-   ========================================================= */
-
-function isValidURL(url) {
-    try {
-        const parsedURL =
-            new URL(url);
-
-        return (
-            parsedURL.protocol === "http:" ||
-            parsedURL.protocol === "https:"
-        );
-
-    } catch (error) {
-        return false;
-    }
-}
-
-
-/* =========================================================
-   PROFILE UPDATED EVENT
-   ========================================================= */
-
-document.addEventListener(
-    "profileUpdated",
-    function () {
-        const data = loadData();
-
-        updateProfileCompletion(data);
-    }
-);
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const existing = Storage.Profile.get();
+        const data = { ...existing, photo: reader.result };
+        Storage.Profile.save(data);
+        renderPhoto(data);
+        UI.toast("Photo updated", "success");
+        Dashboard.render();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function init() {
+    bindForm();
+    loadForm();
+  }
+
+  return { init, loadForm, computeCompletion, getInitials };
+})();
