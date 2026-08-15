@@ -1,622 +1,139 @@
-/* =========================================================
-   PROJECTS
-   ========================================================= */
+/**
+ * projects.js — Project CRUD rendered as cards.
+ */
+const ProjectsModule = (() => {
+  const STATUSES = ["Planned", "In Progress", "Completed"];
 
-document.addEventListener("DOMContentLoaded", function () {
-    loadProjects();
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str || "";
+    return div.innerHTML;
+  }
 
-    const projectForm =
-        document.querySelector("#projectForm");
+  function statusClass(status) {
+    return status.replace(/\s+/g, "");
+  }
 
-    if (projectForm) {
-        projectForm.addEventListener(
-            "submit",
-            saveProject
-        );
-    }
-
-    document.addEventListener(
-        "sectionChanged",
-        function (event) {
-            if (event.detail.section === "projects") {
-                loadProjects();
-            }
-        }
-    );
-});
-
-
-/* =========================================================
-   LOAD PROJECTS
-   ========================================================= */
-
-function loadProjects() {
-    const data = loadData();
-
-    renderProjects(data.projects);
-
-    updateProjectCount(data.projects);
-}
-
-
-/* =========================================================
-   RENDER PROJECTS
-   ========================================================= */
-
-function renderProjects(projects) {
-    const container =
-        document.querySelector(
-            "[data-projects-list]"
-        );
-
-    if (!container) {
-        return;
-    }
+  function render() {
+    const projects = Storage.Projects.getAll();
+    const list = document.getElementById("projectsList");
+    const empty = document.getElementById("projectsEmpty");
 
     if (projects.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-
-                <div class="empty-state-icon">
-                    <i class="fa-solid fa-folder-open"></i>
-                </div>
-
-                <h3>No projects yet</h3>
-
-                <p>
-                    Add your first project to showcase
-                    your work and technical skills.
-                </p>
-
-            </div>
-        `;
-
-        return;
+      list.innerHTML = "";
+      empty.hidden = false;
+      return;
     }
-
-    container.innerHTML =
-        projects.map(function (project) {
-
-            const technologies =
-                Array.isArray(project.technologies)
-                    ? project.technologies
-                    : [];
-
-            const technologyHTML =
-                technologies.map(function (technology) {
-                    return `
-                        <span class="technology-tag">
-                            ${escapeHTML(technology)}
-                        </span>
-                    `;
-                }).join("");
-
-            const statusClass =
-                getProjectStatusClass(
-                    project.status
-                );
-
-            return `
-                <div class="project-card">
-
-                    <div class="project-card-header">
-
-                        <div class="project-icon">
-                            <i class="fa-solid fa-code"></i>
-                        </div>
-
-                        <div class="project-actions">
-
-                            <button
-                                type="button"
-                                class="icon-btn"
-                                onclick="editProject('${project.id}')"
-                                title="Edit project"
-                            >
-                                <i class="fa-solid fa-pen"></i>
-                            </button>
-
-                            <button
-                                type="button"
-                                class="icon-btn delete-btn"
-                                onclick="removeProject('${project.id}')"
-                                title="Delete project"
-                            >
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <div class="project-card-body">
-
-                        <div class="project-status ${statusClass}">
-                            ${escapeHTML(project.status)}
-                        </div>
-
-                        <h3 class="project-title">
-                            ${escapeHTML(project.title)}
-                        </h3>
-
-                        <p class="project-description">
-                            ${escapeHTML(project.description)}
-                        </p>
-
-                        <div class="project-technologies">
-                            ${technologyHTML}
-                        </div>
-
-                    </div>
-
-                    <div class="project-card-footer">
-
-                        <div class="project-category">
-                            <i class="fa-solid fa-layer-group"></i>
-                            ${escapeHTML(project.category)}
-                        </div>
-
-                        <div class="project-links">
-
-                            ${
-                                project.githubUrl
-                                    ? `
-                                    <a
-                                        href="${escapeHTML(project.githubUrl)}"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="project-link"
-                                        title="GitHub"
-                                    >
-                                        <i class="fa-brands fa-github"></i>
-                                    </a>
-                                    `
-                                    : ""
-                            }
-
-                            ${
-                                project.liveUrl
-                                    ? `
-                                    <a
-                                        href="${escapeHTML(project.liveUrl)}"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="project-link"
-                                        title="Live Demo"
-                                    >
-                                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                                    </a>
-                                    `
-                                    : ""
-                            }
-
-                        </div>
-
-                    </div>
-
-                </div>
-            `;
-
-        }).join("");
-}
-
-
-/* =========================================================
-   PROJECT STATUS CLASS
-   ========================================================= */
-
-function getProjectStatusClass(status) {
-    if (status === "Completed") {
-        return "status-completed";
-    }
-
-    if (status === "In Progress") {
-        return "status-progress";
-    }
-
-    if (status === "Planned") {
-        return "status-planned";
-    }
-
-    return "";
-}
-
-
-/* =========================================================
-   SAVE PROJECT
-   ========================================================= */
-
-function saveProject(event) {
-    event.preventDefault();
-
-    const form =
-        event.target;
-
-    if (!validateRequiredFields(form)) {
-        showToast(
-            "Please fill in all required fields.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const title =
-        document.querySelector("#projectTitle")
-            ?.value.trim();
-
-    const description =
-        document.querySelector("#projectDescription")
-            ?.value.trim();
-
-    const technologiesInput =
-        document.querySelector("#projectTechnologies")
-            ?.value.trim();
-
-    const githubUrl =
-        document.querySelector("#projectGithub")
-            ?.value.trim();
-
-    const liveUrl =
-        document.querySelector("#projectLive")
-            ?.value.trim();
-
-    const status =
-        document.querySelector("#projectStatus")
-            ?.value;
-
-    const category =
-        document.querySelector("#projectCategory")
-            ?.value;
-
-    if (!title) {
-        showToast(
-            "Please enter a project title.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (!description) {
-        showToast(
-            "Please enter a project description.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (!technologiesInput) {
-        showToast(
-            "Please enter at least one technology.",
-            "warning"
-        );
-
-        return;
-    }
-
-    /*
-     * Convert comma-separated technologies
-     * into an array.
-     */
-    const technologies =
-        technologiesInput
-            .split(",")
-            .map(function (technology) {
-                return technology.trim();
-            })
-            .filter(function (technology) {
-                return technology !== "";
-            });
-
-    /*
-     * Validate URLs only when provided.
-     */
-    if (
-        githubUrl &&
-        !isValidURL(githubUrl)
-    ) {
-        showToast(
-            "Please enter a valid GitHub URL.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (
-        liveUrl &&
-        !isValidURL(liveUrl)
-    ) {
-        showToast(
-            "Please enter a valid live demo URL.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const projectData = {
-        title: title,
-        description: description,
-        technologies: technologies,
-        githubUrl: githubUrl,
-        liveUrl: liveUrl,
-        status: status,
-        category: category
-    };
-
-    const editingId =
-        appState.editingId;
-
-    if (editingId) {
-
-        updateItem(
-            "projects",
-            editingId,
-            projectData
-        );
-
-        addActivity(
-            "project",
-            `Updated ${title} project`
-        );
-
-        showToast(
-            "Project updated successfully!",
-            "success"
-        );
-
-    } else {
-
-        addItem(
-            "projects",
-            projectData
-        );
-
-        addActivity(
-            "project",
-            `Added ${title} project`
-        );
-
-        showToast(
-            "Project added successfully!",
-            "success"
-        );
-    }
-
-    resetProjectForm();
-
-    loadProjects();
-
-    document.dispatchEvent(
-        new CustomEvent("projectsUpdated")
+    empty.hidden = true;
+
+    list.innerHTML = projects
+      .map(
+        (p) => `
+      <article class="project-card" data-id="${p.id}">
+        <div class="project-card__top">
+          <p class="project-card__title">${escapeHtml(p.title)}</p>
+          <span class="status-badge status-badge--${statusClass(p.status)}">${escapeHtml(p.status)}</span>
+        </div>
+        <p class="project-card__desc">${escapeHtml(p.description)}</p>
+        <div class="tag-row">${(p.tech || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>
+        <div class="project-card__links">
+          ${p.github ? `<a href="${escapeHtml(p.github)}" target="_blank" rel="noopener">GitHub ↗</a>` : ""}
+          ${p.demo ? `<a href="${escapeHtml(p.demo)}" target="_blank" rel="noopener">Live demo ↗</a>` : ""}
+        </div>
+        <div class="card-actions">
+          <button class="btn btn--ghost btn--small edit-project">Edit</button>
+          <button class="btn btn--danger btn--small delete-project">Delete</button>
+        </div>
+      </article>`
+      )
+      .join("");
+
+    list.querySelectorAll(".edit-project").forEach((btn) =>
+      btn.addEventListener("click", (e) => openForm(e.target.closest(".project-card").dataset.id))
     );
-}
-
-
-/* =========================================================
-   EDIT PROJECT
-   ========================================================= */
-
-function editProject(id) {
-    const project =
-        findItem("projects", id);
-
-    if (!project) {
-        showToast(
-            "Project could not be found.",
-            "error"
-        );
-
-        return;
-    }
-
-    appState.editingId = id;
-
-    setInputValue(
-        "#projectTitle",
-        project.title
-    );
-
-    setInputValue(
-        "#projectDescription",
-        project.description
-    );
-
-    setInputValue(
-        "#projectTechnologies",
-        project.technologies.join(", ")
-    );
-
-    setInputValue(
-        "#projectGithub",
-        project.githubUrl
-    );
-
-    setInputValue(
-        "#projectLive",
-        project.liveUrl
-    );
-
-    setInputValue(
-        "#projectStatus",
-        project.status
-    );
-
-    setInputValue(
-        "#projectCategory",
-        project.category
-    );
-
-    const formTitle =
-        document.querySelector(
-            "[data-project-form-title]"
-        );
-
-    if (formTitle) {
-        formTitle.textContent =
-            "Edit Project";
-    }
-
-    const submitButton =
-        document.querySelector(
-            "#projectForm button[type='submit']"
-        );
-
-    if (submitButton) {
-        submitButton.innerHTML =
-            `<i class="fa-solid fa-check"></i> Update Project`;
-    }
-
-    const cancelButton =
-        document.querySelector(
-            "[data-cancel-project]"
-        );
-
-    if (cancelButton) {
-        cancelButton.style.display =
-            "inline-flex";
-    }
-
-    const form =
-        document.querySelector(
-            "#projectForm"
-        );
-
-    if (form) {
-        form.scrollIntoView({
-            behavior: "smooth",
-            block: "center"
+    list.querySelectorAll(".delete-project").forEach((btn) =>
+      btn.addEventListener("click", (e) => {
+        const id = e.target.closest(".project-card").dataset.id;
+        UI.confirm("Delete this project? This can't be undone.", () => {
+          Storage.Projects.delete(id);
+          Storage.Activity.log("Deleted a project");
+          render();
+          Dashboard.render();
+          Analytics.render();
+          UI.toast("Project deleted", "info");
         });
-    }
-}
-
-
-/* =========================================================
-   DELETE PROJECT
-   ========================================================= */
-
-function removeProject(id) {
-    const project =
-        findItem("projects", id);
-
-    if (!project) {
-        return;
-    }
-
-    const confirmed =
-        confirmDelete(
-            `"${project.title}"`
-        );
-
-    if (!confirmed) {
-        return;
-    }
-
-    deleteItem(
-        "projects",
-        id
+      })
     );
+  }
 
-    addActivity(
-        "project",
-        `Deleted ${project.title} project`
-    );
+  function openForm(id) {
+    const existing = id ? Storage.Projects.getAll().find((p) => p.id === id) : null;
+    const body = `
+      <form id="projectForm" class="form-grid">
+        <div class="field field--wide">
+          <label for="projTitle">Project title</label>
+          <input type="text" id="projTitle" required placeholder="e.g. Expense Tracker" value="${existing ? escapeHtml(existing.title) : ""}">
+        </div>
+        <div class="field field--wide">
+          <label for="projDesc">Description</label>
+          <textarea id="projDesc" rows="3" placeholder="What does it do?">${existing ? escapeHtml(existing.description) : ""}</textarea>
+        </div>
+        <div class="field field--wide">
+          <label for="projTech">Technologies used (comma separated)</label>
+          <input type="text" id="projTech" placeholder="HTML, CSS, JavaScript" value="${existing ? escapeHtml((existing.tech || []).join(", ")) : ""}">
+        </div>
+        <div class="field">
+          <label for="projGithub">GitHub URL</label>
+          <input type="url" id="projGithub" placeholder="https://github.com/..." value="${existing ? escapeHtml(existing.github) : ""}">
+        </div>
+        <div class="field">
+          <label for="projDemo">Live demo URL</label>
+          <input type="url" id="projDemo" placeholder="https://..." value="${existing ? escapeHtml(existing.demo) : ""}">
+        </div>
+        <div class="field field--wide">
+          <label for="projStatus">Status</label>
+          <select id="projStatus">
+            ${STATUSES.map((s) => `<option ${existing && existing.status === s ? "selected" : ""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-actions field--wide">
+          <button type="submit" class="btn btn--primary">${existing ? "Save changes" : "Add project"}</button>
+        </div>
+      </form>`;
+    UI.openModal(existing ? "Edit project" : "Add project", body);
 
-    showToast(
-        "Project deleted successfully.",
-        "success"
-    );
+    document.getElementById("projectForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = document.getElementById("projTitle").value.trim();
+      if (!title) return;
+      const payload = {
+        title,
+        description: document.getElementById("projDesc").value.trim(),
+        tech: document.getElementById("projTech").value.split(",").map((t) => t.trim()).filter(Boolean),
+        github: document.getElementById("projGithub").value.trim(),
+        demo: document.getElementById("projDemo").value.trim(),
+        status: document.getElementById("projStatus").value,
+      };
+      if (existing) {
+        Storage.Projects.update(existing.id, payload);
+        Storage.Activity.log(`Updated project "${title}"`);
+        UI.toast("Project updated", "success");
+      } else {
+        Storage.Projects.add(payload);
+        Storage.Activity.log(`Added project "${title}"`);
+        UI.toast("Project added", "success");
+      }
+      UI.closeModal();
+      render();
+      Dashboard.render();
+      Analytics.render();
+    });
+  }
 
-    loadProjects();
+  function init() {
+    document.getElementById("addProjectBtn").addEventListener("click", () => openForm(null));
+    render();
+  }
 
-    document.dispatchEvent(
-        new CustomEvent("projectsUpdated")
-    );
-}
-
-
-/* =========================================================
-   RESET PROJECT FORM
-   ========================================================= */
-
-function resetProjectForm() {
-    const form =
-        document.querySelector(
-            "#projectForm"
-        );
-
-    if (form) {
-        form.reset();
-    }
-
-    appState.editingId = null;
-
-    const formTitle =
-        document.querySelector(
-            "[data-project-form-title]"
-        );
-
-    if (formTitle) {
-        formTitle.textContent =
-            "Add New Project";
-    }
-
-    const submitButton =
-        document.querySelector(
-            "#projectForm button[type='submit']"
-        );
-
-    if (submitButton) {
-        submitButton.innerHTML =
-            `<i class="fa-solid fa-plus"></i> Add Project`;
-    }
-
-    const cancelButton =
-        document.querySelector(
-            "[data-cancel-project]"
-        );
-
-    if (cancelButton) {
-        cancelButton.style.display =
-            "none";
-    }
-}
-
-
-/* =========================================================
-   CANCEL PROJECT EDIT
-   ========================================================= */
-
-const cancelProjectButton =
-    document.querySelector(
-        "[data-cancel-project]"
-    );
-
-if (cancelProjectButton) {
-    cancelProjectButton.addEventListener(
-        "click",
-        function () {
-            resetProjectForm();
-        }
-    );
-}
-
-
-/* =========================================================
-   UPDATE PROJECT COUNT
-   ========================================================= */
-
-function updateProjectCount(projects) {
-    setElementText(
-        "[data-project-count]",
-        projects.length
-    );
-
-    setElementText(
-        "[data-stat='projects']",
-        projects.length
-    );
-}
+  return { init, render, STATUSES };
+})();
