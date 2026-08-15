@@ -1,475 +1,140 @@
-/* =========================================================
-   SKILLS
-   ========================================================= */
+/**
+ * skills.js — Skills CRUD with category filter and progress bars.
+ */
+const SkillsModule = (() => {
+  const CATEGORIES = ["Programming", "Web Development", "Database", "Tools", "Soft Skills"];
+  let activeFilter = "All";
 
-document.addEventListener("DOMContentLoaded", function () {
-    loadSkills();
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str || "";
+    return div.innerHTML;
+  }
 
-    const skillForm =
-        document.querySelector("#skillForm");
+  function renderFilters() {
+    const row = document.getElementById("skillFilterRow");
+    const cats = ["All", ...CATEGORIES];
+    row.innerHTML = cats
+      .map((c) => `<button class="chip ${c === activeFilter ? "is-active" : ""}" data-filter="${c}">${c}</button>`)
+      .join("");
+    row.querySelectorAll(".chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeFilter = btn.dataset.filter;
+        render();
+      });
+    });
+  }
 
-    if (skillForm) {
-        skillForm.addEventListener(
-            "submit",
-            saveSkill
-        );
-    }
-
-    document.addEventListener(
-        "sectionChanged",
-        function (event) {
-            if (event.detail.section === "skills") {
-                loadSkills();
-            }
-        }
-    );
-});
-
-
-/* =========================================================
-   LOAD SKILLS
-   ========================================================= */
-
-function loadSkills() {
-    const data = loadData();
-
-    renderSkills(data.skills);
-    updateSkillCount(data.skills);
-}
-
-
-/* =========================================================
-   RENDER SKILLS
-   ========================================================= */
-
-function renderSkills(skills) {
-    const container =
-        document.querySelector(
-            "[data-skills-list]"
-        );
-
-    if (!container) {
-        return;
-    }
+  function render() {
+    renderFilters();
+    const skills = Storage.Skills.getAll().filter((s) => activeFilter === "All" || s.category === activeFilter);
+    const list = document.getElementById("skillsList");
+    const empty = document.getElementById("skillsEmpty");
 
     if (skills.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-
-                <div class="empty-state-icon">
-                    <i class="fa-solid fa-code"></i>
-                </div>
-
-                <h3>No skills added yet</h3>
-
-                <p>
-                    Add your first skill to start building
-                    your professional profile.
-                </p>
-
-            </div>
-        `;
-
-        return;
+      list.innerHTML = "";
+      empty.hidden = false;
+      return;
     }
+    empty.hidden = true;
 
-    container.innerHTML =
-        skills.map(function (skill) {
+    list.innerHTML = skills
+      .map(
+        (s) => `
+      <div class="skill-row" data-id="${s.id}">
+        <div>
+          <p class="skill-row__name">${escapeHtml(s.name)}</p>
+          <p class="skill-row__category">${escapeHtml(s.category)}</p>
+        </div>
+        <span class="skill-row__badge">${s.level}%</span>
+        <div class="progress-track"><div class="progress-fill" style="width:${s.level}%"></div></div>
+        <div class="skill-row__actions">
+          <button class="icon-btn edit-skill" aria-label="Edit skill">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="icon-btn delete-skill" aria-label="Delete skill">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z"/></svg>
+          </button>
+        </div>
+      </div>`
+      )
+      .join("");
 
-            const proficiency =
-                Number(skill.proficiency) || 0;
-
-            return `
-                <div class="skill-card">
-
-                    <div class="skill-card-top">
-
-                        <div>
-                            <h3>
-                                ${escapeHTML(skill.name)}
-                            </h3>
-
-                            <span class="skill-category">
-                                ${escapeHTML(skill.category)}
-                            </span>
-                        </div>
-
-                        <div class="skill-actions">
-
-                            <button
-                                type="button"
-                                class="icon-btn"
-                                onclick="editSkill('${skill.id}')"
-                                title="Edit skill"
-                            >
-                                <i class="fa-solid fa-pen"></i>
-                            </button>
-
-                            <button
-                                type="button"
-                                class="icon-btn delete-btn"
-                                onclick="removeSkill('${skill.id}')"
-                                title="Delete skill"
-                            >
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <div class="skill-progress-info">
-
-                        <span>
-                            Proficiency
-                        </span>
-
-                        <strong>
-                            ${proficiency}%
-                        </strong>
-
-                    </div>
-
-                    <div class="progress-bar">
-
-                        <div
-                            class="progress-fill"
-                            style="width: ${proficiency}%"
-                        ></div>
-
-                    </div>
-
-                </div>
-            `;
-
-        }).join("");
-}
-
-
-/* =========================================================
-   SAVE SKILL
-   ========================================================= */
-
-function saveSkill(event) {
-    event.preventDefault();
-
-    const form =
-        event.target;
-
-    if (!validateRequiredFields(form)) {
-        showToast(
-            "Please fill in all required fields.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const name =
-        document.querySelector("#skillName")
-            ?.value.trim();
-
-    const category =
-        document.querySelector("#skillCategory")
-            ?.value;
-
-    const proficiency =
-        Number(
-            document.querySelector("#skillProficiency")
-                ?.value
-        );
-
-    if (!name) {
-        showToast(
-            "Please enter a skill name.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (!category) {
-        showToast(
-            "Please select a skill category.",
-            "warning"
-        );
-
-        return;
-    }
-
-    if (
-        Number.isNaN(proficiency) ||
-        proficiency < 0 ||
-        proficiency > 100
-    ) {
-        showToast(
-            "Proficiency must be between 0 and 100.",
-            "warning"
-        );
-
-        return;
-    }
-
-    const editingId =
-        appState.editingId;
-
-    if (editingId) {
-
-        updateItem(
-            "skills",
-            editingId,
-            {
-                name: name,
-                category: category,
-                proficiency: proficiency
-            }
-        );
-
-        addActivity(
-            "skill",
-            `Updated ${name} proficiency to ${proficiency}%`
-        );
-
-        showToast(
-            "Skill updated successfully!",
-            "success"
-        );
-
-    } else {
-
-        addItem(
-            "skills",
-            {
-                name: name,
-                category: category,
-                proficiency: proficiency
-            }
-        );
-
-        addActivity(
-            "skill",
-            `Added ${name} skill`
-        );
-
-        showToast(
-            "Skill added successfully!",
-            "success"
-        );
-    }
-
-    resetSkillForm();
-    loadSkills();
-
-    document.dispatchEvent(
-        new CustomEvent("skillsUpdated")
+    list.querySelectorAll(".edit-skill").forEach((btn) =>
+      btn.addEventListener("click", (e) => openForm(e.target.closest(".skill-row").dataset.id))
     );
-}
-
-
-/* =========================================================
-   EDIT SKILL
-   ========================================================= */
-
-function editSkill(id) {
-    const skill =
-        findItem("skills", id);
-
-    if (!skill) {
-        showToast(
-            "Skill could not be found.",
-            "error"
-        );
-
-        return;
-    }
-
-    appState.editingId = id;
-
-    setInputValue(
-        "#skillName",
-        skill.name
-    );
-
-    setInputValue(
-        "#skillCategory",
-        skill.category
-    );
-
-    setInputValue(
-        "#skillProficiency",
-        skill.proficiency
-    );
-
-    const formTitle =
-        document.querySelector(
-            "[data-skill-form-title]"
-        );
-
-    if (formTitle) {
-        formTitle.textContent =
-            "Edit Skill";
-    }
-
-    const submitButton =
-        document.querySelector(
-            "#skillForm button[type='submit']"
-        );
-
-    if (submitButton) {
-        submitButton.innerHTML =
-            `<i class="fa-solid fa-check"></i> Update Skill`;
-    }
-
-    const cancelButton =
-        document.querySelector(
-            "[data-cancel-skill]"
-        );
-
-    if (cancelButton) {
-        cancelButton.style.display =
-            "inline-flex";
-    }
-
-    /*
-     * Scroll to form.
-     */
-    const form =
-        document.querySelector(
-            "#skillForm"
-        );
-
-    if (form) {
-        form.scrollIntoView({
-            behavior: "smooth",
-            block: "center"
+    list.querySelectorAll(".delete-skill").forEach((btn) =>
+      btn.addEventListener("click", (e) => {
+        const id = e.target.closest(".skill-row").dataset.id;
+        UI.confirm("Delete this skill? This can't be undone.", () => {
+          Storage.Skills.delete(id);
+          Storage.Activity.log("Deleted a skill");
+          render();
+          Dashboard.render();
+          Analytics.render();
+          UI.toast("Skill deleted", "info");
         });
-    }
-}
-
-
-/* =========================================================
-   DELETE SKILL
-   ========================================================= */
-
-function removeSkill(id) {
-    const skill =
-        findItem("skills", id);
-
-    if (!skill) {
-        return;
-    }
-
-    const confirmed =
-        confirmDelete(
-            `"${skill.name}"`
-        );
-
-    if (!confirmed) {
-        return;
-    }
-
-    deleteItem(
-        "skills",
-        id
+      })
     );
+  }
 
-    addActivity(
-        "skill",
-        `Deleted ${skill.name} skill`
-    );
+  function openForm(id) {
+    const existing = id ? Storage.Skills.getAll().find((s) => s.id === id) : null;
+    const body = `
+      <form id="skillForm" class="form-grid">
+        <div class="field field--wide">
+          <label for="skillName">Skill name</label>
+          <input type="text" id="skillName" required placeholder="e.g. React" value="${existing ? escapeHtml(existing.name) : ""}">
+        </div>
+        <div class="field">
+          <label for="skillCategory">Category</label>
+          <select id="skillCategory">
+            ${CATEGORIES.map((c) => `<option ${existing && existing.category === c ? "selected" : ""}>${c}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label for="skillLevel">Proficiency: <span id="skillLevelValue">${existing ? existing.level : 50}</span>%</label>
+          <input type="range" id="skillLevel" min="0" max="100" step="5" value="${existing ? existing.level : 50}">
+        </div>
+        <div class="form-actions field--wide">
+          <button type="submit" class="btn btn--primary">${existing ? "Save changes" : "Add skill"}</button>
+        </div>
+      </form>`;
+    UI.openModal(existing ? "Edit skill" : "Add skill", body);
 
-    showToast(
-        "Skill deleted successfully.",
-        "success"
-    );
+    document.getElementById("skillLevel").addEventListener("input", (e) => {
+      document.getElementById("skillLevelValue").textContent = e.target.value;
+    });
 
-    loadSkills();
+    document.getElementById("skillForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = document.getElementById("skillName").value.trim();
+      if (!name) return;
+      const payload = {
+        name,
+        category: document.getElementById("skillCategory").value,
+        level: Number(document.getElementById("skillLevel").value),
+      };
+      if (existing) {
+        Storage.Skills.update(existing.id, payload);
+        Storage.Activity.log(`Updated skill "${name}"`);
+        UI.toast("Skill updated", "success");
+      } else {
+        Storage.Skills.add(payload);
+        Storage.Activity.log(`Added skill "${name}"`);
+        UI.toast("Skill added", "success");
+      }
+      UI.closeModal();
+      render();
+      Dashboard.render();
+      Analytics.render();
+    });
+  }
 
-    document.dispatchEvent(
-        new CustomEvent("skillsUpdated")
-    );
-}
+  function init() {
+    document.getElementById("addSkillBtn").addEventListener("click", () => openForm(null));
+    render();
+  }
 
-
-/* =========================================================
-   RESET SKILL FORM
-   ========================================================= */
-
-function resetSkillForm() {
-    const form =
-        document.querySelector(
-            "#skillForm"
-        );
-
-    if (form) {
-        form.reset();
-    }
-
-    appState.editingId = null;
-
-    const formTitle =
-        document.querySelector(
-            "[data-skill-form-title]"
-        );
-
-    if (formTitle) {
-        formTitle.textContent =
-            "Add New Skill";
-    }
-
-    const submitButton =
-        document.querySelector(
-            "#skillForm button[type='submit']"
-        );
-
-    if (submitButton) {
-        submitButton.innerHTML =
-            `<i class="fa-solid fa-plus"></i> Add Skill`;
-    }
-
-    const cancelButton =
-        document.querySelector(
-            "[data-cancel-skill]"
-        );
-
-    if (cancelButton) {
-        cancelButton.style.display =
-            "none";
-    }
-}
-
-
-/* =========================================================
-   CANCEL EDIT
-   ========================================================= */
-
-const cancelSkillButton =
-    document.querySelector(
-        "[data-cancel-skill]"
-    );
-
-if (cancelSkillButton) {
-    cancelSkillButton.addEventListener(
-        "click",
-        function () {
-            resetSkillForm();
-        }
-    );
-}
-
-
-/* =========================================================
-   UPDATE SKILL COUNT
-   ========================================================= */
-
-function updateSkillCount(skills) {
-    setElementText(
-        "[data-skill-count]",
-        skills.length
-    );
-
-    setElementText(
-        "[data-stat='skills']",
-        skills.length
-    );
-}
+  return { init, render, CATEGORIES };
+})();
