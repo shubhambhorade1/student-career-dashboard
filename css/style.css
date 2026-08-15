@@ -372,6 +372,8 @@ textarea{ resize: vertical; font-family: inherit; }
   position:fixed; inset:0; background: rgba(10,12,20,0.5); backdrop-filter: blur(2px);
   display:flex; align-items:center; justify-content:center; z-index:100; padding:20px;
 }
+.modal-backdrop[hidden]{ display:none !important; }
+
 .modal{
   background: var(--surface); border-radius: var(--radius-lg); width:100%; max-width:560px;
   box-shadow: var(--shadow-lg); max-height:88vh; overflow-y:auto; animation: modalIn 200ms ease;
