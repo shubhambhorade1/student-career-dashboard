@@ -1,511 +1,128 @@
-/* =========================================================
-   ANALYTICS
-   ========================================================= */
+/**
+ * analytics.js — Skills distribution, application status, learning progress
+ * and projects-by-technology charts.
+ */
+const Analytics = (() => {
+  let skillsChart = null;
+  let applicationsChart = null;
+  let learningChart = null;
+  let projectsChart = null;
 
-let skillsChart = null;
-let applicationsChart = null;
-let learningChart = null;
-let projectsChart = null;
+  function palette() {
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      accent: styles.getPropertyValue("--accent").trim(),
+      teal: styles.getPropertyValue("--teal").trim(),
+      amber: styles.getPropertyValue("--amber").trim(),
+      danger: styles.getPropertyValue("--danger").trim(),
+      text: styles.getPropertyValue("--text-muted").trim(),
+      grid: styles.getPropertyValue("--border").trim(),
+      set: ["#4F46E5", "#0F9C8F", "#F59E0B", "#E5484D", "#6366F1", "#22C55E"],
+    };
+  }
 
+  function renderSkillsChart() {
+    const ctx = document.getElementById("skillsChart");
+    if (!ctx) return;
+    const skills = Storage.Skills.getAll();
+    const byCategory = {};
+    skills.forEach((s) => { byCategory[s.category] = (byCategory[s.category] || 0) + 1; });
+    const p = palette();
 
-/* =========================================================
-   INITIALIZE ANALYTICS
-   ========================================================= */
-
-document.addEventListener("DOMContentLoaded", function () {
-    loadAnalytics();
-
-    document.addEventListener(
-        "sectionChanged",
-        function (event) {
-            if (event.detail.section === "analytics") {
-                loadAnalytics();
-            }
-        }
-    );
-
-    /*
-     * Update charts whenever data changes.
-     */
-    document.addEventListener(
-        "skillsUpdated",
-        loadAnalytics
-    );
-
-    document.addEventListener(
-        "projectsUpdated",
-        loadAnalytics
-    );
-
-    document.addEventListener(
-        "applicationsUpdated",
-        loadAnalytics
-    );
-
-    document.addEventListener(
-        "learningUpdated",
-        loadAnalytics
-    );
-
-    document.addEventListener(
-        "themeChanged",
-        loadAnalytics
-    );
-});
-
-
-/* =========================================================
-   LOAD ANALYTICS
-   ========================================================= */
-
-function loadAnalytics() {
-    if (typeof Chart === "undefined") {
-        console.warn(
-            "Chart.js is not loaded."
-        );
-
-        return;
-    }
-
-    const data = loadData();
-
-    createSkillsChart(data.skills);
-    createApplicationsChart(data.applications);
-    createLearningChart(data.learning);
-    createProjectsChart(data.projects);
-}
-
-
-/* =========================================================
-   SKILLS DISTRIBUTION CHART
-   ========================================================= */
-
-function createSkillsChart(skills) {
-    const canvas =
-        document.querySelector(
-            "#skillsDistributionChart"
-        );
-
-    if (!canvas) {
-        return;
-    }
-
-    const categories = {};
-
-    skills.forEach(function (skill) {
-
-        if (!categories[skill.category]) {
-            categories[skill.category] = 0;
-        }
-
-        categories[skill.category]++;
+    if (skillsChart) skillsChart.destroy();
+    skillsChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: Object.keys(byCategory),
+        datasets: [{ data: Object.values(byCategory), backgroundColor: p.set }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: "bottom", labels: { color: p.text, boxWidth: 10, font: { size: 11 } } } },
+      },
     });
-
-    const labels =
-        Object.keys(categories);
-
-    const values =
-        Object.values(categories);
-
-    if (skillsChart) {
-        skillsChart.destroy();
-    }
-
-    skillsChart = new Chart(
-        canvas,
-        {
-            type: "doughnut",
-
-            data: {
-                labels: labels,
-
-                datasets: [
-                    {
-                        data: values,
-
-                        backgroundColor: [
-                            "#6366f1",
-                            "#8b5cf6",
-                            "#06b6d4",
-                            "#10b981",
-                            "#f59e0b",
-                            "#ef4444"
-                        ],
-
-                        borderWidth: 0
-                    }
-                ]
-            },
-
-            options: {
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                cutout: "65%",
-
-                plugins: {
-                    legend: {
-                        position: "bottom"
-                    }
-                }
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   APPLICATION STATUS CHART
-   ========================================================= */
-
-function createApplicationsChart(
-    applications
-) {
-    const canvas =
-        document.querySelector(
-            "#applicationStatusChart"
-        );
-
-    if (!canvas) {
-        return;
-    }
-
-    const statuses = [
-        "Applied",
-        "Shortlisted",
-        "Interview",
-        "Selected",
-        "Rejected"
-    ];
-
-    const values =
-        statuses.map(function (status) {
-
-            return applications.filter(
-                function (application) {
-                    return (
-                        application.status ===
-                        status
-                    );
-                }
-            ).length;
-
-        });
-
-    if (applicationsChart) {
-        applicationsChart.destroy();
-    }
-
-    applicationsChart = new Chart(
-        canvas,
-        {
-            type: "bar",
-
-            data: {
-                labels: statuses,
-
-                datasets: [
-                    {
-                        label:
-                            "Applications",
-
-                        data: values,
-
-                        backgroundColor: [
-                            "#6366f1",
-                            "#8b5cf6",
-                            "#06b6d4",
-                            "#10b981",
-                            "#ef4444"
-                        ],
-
-                        borderRadius: 8
-                    }
-                ]
-            },
-
-            options: {
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-
-                scales: {
-                    y: {
-                        beginAtZero: true,
-
-                        ticks: {
-                            precision: 0
-                        },
-
-                        grid: {
-                            color:
-                                getAnalyticsGridColor()
-                        }
-                    },
-
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   LEARNING PROGRESS CHART
-   ========================================================= */
-
-function createLearningChart(
-    learning
-) {
-    const canvas =
-        document.querySelector(
-            "#learningProgressChart"
-        );
-
-    if (!canvas) {
-        return;
-    }
-
-    const labels =
-        learning.map(function (item) {
-            return item.topic;
-        });
-
-    const values =
-        learning.map(function (item) {
-            return Number(item.progress) || 0;
-        });
-
-    if (learningChart) {
-        learningChart.destroy();
-    }
-
-    learningChart = new Chart(
-        canvas,
-        {
-            type: "bar",
-
-            data: {
-                labels: labels,
-
-                datasets: [
-                    {
-                        label:
-                            "Progress",
-
-                        data: values,
-
-                        backgroundColor:
-                            "#6366f1",
-
-                        borderRadius: 8
-                    }
-                ]
-            },
-
-            options: {
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                indexAxis: "y",
-
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-
-                scales: {
-                    x: {
-                        beginAtZero: true,
-
-                        max: 100,
-
-                        ticks: {
-                            callback:
-                                function (value) {
-                                    return (
-                                        value +
-                                        "%"
-                                    );
-                                }
-                        },
-
-                        grid: {
-                            color:
-                                getAnalyticsGridColor()
-                        }
-                    },
-
-                    y: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   PROJECT TECHNOLOGY CHART
-   ========================================================= */
-
-function createProjectsChart(
-    projects
-) {
-    const canvas =
-        document.querySelector(
-            "#projectsTechnologyChart"
-        );
-
-    if (!canvas) {
-        return;
-    }
-
-    const technologies = {};
-
-    projects.forEach(function (project) {
-
-        if (
-            !Array.isArray(
-                project.technologies
-            )
-        ) {
-            return;
-        }
-
-        project.technologies.forEach(
-            function (technology) {
-
-                const name =
-                    technology.trim();
-
-                if (!name) {
-                    return;
-                }
-
-                if (!technologies[name]) {
-                    technologies[name] = 0;
-                }
-
-                technologies[name]++;
-            }
-        );
+  }
+
+  function renderApplicationsChart() {
+    const ctx = document.getElementById("applicationsChart");
+    if (!ctx) return;
+    const apps = Storage.Applications.getAll();
+    const statuses = ["Applied", "Shortlisted", "Interview", "Selected", "Rejected"];
+    const counts = statuses.map((s) => apps.filter((a) => a.status === s).length);
+    const p = palette();
+
+    if (applicationsChart) applicationsChart.destroy();
+    applicationsChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: statuses,
+        datasets: [{ label: "Applications", data: counts, backgroundColor: [p.accent, p.amber, p.amber, p.teal, p.danger] }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: p.text } },
+          y: { grid: { color: p.grid }, ticks: { color: p.text, stepSize: 1 }, beginAtZero: true },
+        },
+      },
     });
+  }
 
-    const labels =
-        Object.keys(technologies);
+  function renderLearningChart() {
+    const ctx = document.getElementById("learningChart");
+    if (!ctx) return;
+    const goals = Storage.Learning.getAll();
+    const p = palette();
 
-    const values =
-        Object.values(technologies);
+    if (learningChart) learningChart.destroy();
+    learningChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: goals.map((g) => g.topic),
+        datasets: [{ label: "Progress %", data: goals.map((g) => g.progress), backgroundColor: p.accent }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: p.grid }, ticks: { color: p.text }, beginAtZero: true, max: 100 },
+          y: { grid: { display: false }, ticks: { color: p.text, font: { size: 11 } } },
+        },
+      },
+    });
+  }
 
-    if (projectsChart) {
-        projectsChart.destroy();
-    }
+  function renderProjectsChart() {
+    const ctx = document.getElementById("projectsChart");
+    if (!ctx) return;
+    const projects = Storage.Projects.getAll();
+    const byTech = {};
+    projects.forEach((proj) => (proj.tech || []).forEach((t) => { byTech[t] = (byTech[t] || 0) + 1; }));
+    const p = palette();
 
-    projectsChart = new Chart(
-        canvas,
-        {
-            type: "doughnut",
+    if (projectsChart) projectsChart.destroy();
+    projectsChart = new Chart(ctx, {
+      type: "polarArea",
+      data: {
+        labels: Object.keys(byTech),
+        datasets: [{ data: Object.values(byTech), backgroundColor: p.set.map((c) => c + "CC") }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: "bottom", labels: { color: p.text, boxWidth: 10, font: { size: 11 } } } },
+        scales: { r: { ticks: { display: false }, grid: { color: p.grid } } },
+      },
+    });
+  }
 
-            data: {
-                labels: labels,
+  function render() {
+    renderSkillsChart();
+    renderApplicationsChart();
+    renderLearningChart();
+    renderProjectsChart();
+  }
 
-                datasets: [
-                    {
-                        data: values,
-
-                        backgroundColor: [
-                            "#6366f1",
-                            "#8b5cf6",
-                            "#06b6d4",
-                            "#10b981",
-                            "#f59e0b",
-                            "#ef4444",
-                            "#ec4899",
-                            "#14b8a6"
-                        ],
-
-                        borderWidth: 0
-                    }
-                ]
-            },
-
-            options: {
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                cutout: "60%",
-
-                plugins: {
-                    legend: {
-                        position: "bottom"
-                    }
-                }
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   CHART GRID COLOR
-   ========================================================= */
-
-function getAnalyticsGridColor() {
-    const darkMode =
-        document.body.classList.contains(
-            "dark-mode"
-        );
-
-    if (darkMode) {
-        return "rgba(148, 163, 184, 0.12)";
-    }
-
-    return "rgba(148, 163, 184, 0.18)";
-}
-
-
-/* =========================================================
-   CLEANUP CHARTS
-   ========================================================= */
-
-function destroyAnalyticsCharts() {
-
-    if (skillsChart) {
-        skillsChart.destroy();
-        skillsChart = null;
-    }
-
-    if (applicationsChart) {
-        applicationsChart.destroy();
-        applicationsChart = null;
-    }
-
-    if (learningChart) {
-        learningChart.destroy();
-        learningChart = null;
-    }
-
-    if (projectsChart) {
-        projectsChart.destroy();
-        projectsChart = null;
-    }
-}
+  return { render };
+})();
